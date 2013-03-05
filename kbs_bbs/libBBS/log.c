@@ -374,7 +374,12 @@ void newpostlog(const char *userid, const char *boardname, const char *title, in
     strncpy(ppostlog->boardname, boardname, BOARDNAMELEN);
     ppostlog->boardname[BOARDNAMELEN-1]='\0';
     ppostlog->threadid = groupid;
+#ifdef REDIS
+    ppostlog->postid=id;
+    ppostlog->replyid=id;
+#else
     ppostlog->articleid = id;
+#endif/* REDIS */
     strncpy(ppostlog->title, title, 80);
     ppostlog->title[80]='\0';
 #ifdef NEWSMTH
