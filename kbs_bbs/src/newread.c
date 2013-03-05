@@ -518,6 +518,7 @@ static int read_title(struct _select_def *conf)
     return SHOW_CONTINUE;
 }
 
+#ifdef ENABLE_REFER
 int get_refer_fileheader(struct refer *r, int ent, struct fileheader *fh)
 {
     struct boardheader *board;
@@ -539,6 +540,7 @@ int get_refer_fileheader(struct refer *r, int ent, struct fileheader *fh)
 
     return 0;
 }
+#endif
 
 int read_showcontent_error(struct _select_def *conf)
 {
