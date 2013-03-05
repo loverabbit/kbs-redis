@@ -352,6 +352,10 @@ struct _new_postlog {
 #ifdef NEWSMTH
     char ip[16];
 #endif
+#ifdef REDIS
+    int postid;
+    int replyid;
+#endif
 };
 #endif
 
