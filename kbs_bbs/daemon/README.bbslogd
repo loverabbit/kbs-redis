@@ -1,0 +1,20 @@
+bbslogd is rewritten.
+
+All logs will be published through redis in the channel of event.*,
+client daemons can subscribe to event.* to react to events.
+
+For example,
+1. postlogd subscribed to event.post, and log everything in to MySQL.
+
+2. bbsindexd subscribed to event.post, event.update and event.delete,
+and update search indexs accordingly.
+
+3. notifyd subscribed to event.post, and notify the web user of event.
+
+Dependency:
+1. redis
+   http://redis.io/
+
+2. hiredis(Redis C Client)
+   https://github.com/antirez/hiredis
+   Included under /daemon/hireds. Compile hiredis before everything

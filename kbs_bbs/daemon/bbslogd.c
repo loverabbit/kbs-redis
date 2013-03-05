@@ -1,398 +1,98 @@
+// Receive logs from bbsd and write them to files
+// and push logs as events into redis
+// fool <zcbenz@gmail.com>
+
 #include "bbs.h"
+#include "common.h"
 #include <sys/ipc.h>
 #include <sys/msg.h>
 #include <signal.h>
-struct bbs_msgbuf *rcvlog(int msqid)
-{
-    static char buf[1024];
-    struct bbs_msgbuf *msgp = (struct bbs_msgbuf *) buf;
-    int retv;
+#include <unistd.h>
 
-    retv = msgrcv(msqid, msgp, sizeof(buf) - sizeof(msgp->mtype) - 2, 0, MSG_NOERROR);
-    if (retv < 0) {
-	if (errno==EINTR)
-            return NULL;
-	else {
-	    bbslog("3error","bbslogd(rcvlog):%s",strerror(errno));
-	    exit(0);
-	}
-    }
-    retv-=((char*)msgp->mtext-(char*)&msgp->msgtime);
-#ifdef NEWPOSTLOG
-	if (msgp->mtype == BBSLOG_POST){
-		if(retv <= sizeof(struct _new_postlog)){
-			return NULL;
-		}
-		return msgp;
-	}
-#endif
-#ifdef NEWBMLOG
-	if (msgp->mtype == BBSLOG_BM){
-		if(retv <= sizeof(struct _new_bmlog)){
-			return NULL;
-		}
-		return msgp;
-	}
-#endif
-    while (retv > 0 && msgp->mtext[retv - 1] == 0)
-        retv--;
-    if (retv==0) return NULL;
-    if (msgp->mtext[retv - 1] != '\n') {
-        msgp->mtext[retv] = '\n';
-        retv++;
-    }
-    msgp->mtext[retv]=0;
-    return msgp;
-}
+// debug mode
+const int debug = 0;
 
-struct taglogconfig {
-    char *filename;
-    int bufsize;                /* 缓存大小，如果是 0，不缓存 */
+// flush interval
+const int flush_interval = 60 * 10;
+
+struct record_t {
+    const char *filename;
+    size_t bufsize;             /* 缓存大小，如果是 0，不缓存 */
 
     /*
      * 运行时参数 
      */
-    int bufptr;                 /* 使用缓存位置 */
-    char *buf;                  /* 缓存 */
     int fd;                     /* 文件句柄 */
-};
-static struct taglogconfig logconfig[] = {
-    {"usies", 100 * 1024, 0, NULL, -1},
-    {"user.log", 100 * 1024, 0, NULL, 0},
-    {"boardusage.log", 100 * 1024, 0, NULL, 0},
-    {"sms.log", 10 * 1024, 0, NULL, 0},
-    {"debug.log", 10 * 1024, 0, NULL, 0}
+    char *buf;                  /* 缓存 */
+    size_t cur;                 /* 使用缓存位置 */
 };
 
-#if defined(NEWPOSTLOG) || defined(NEWBMLOG)
-static MYSQL s;
-static int postlog_start=0;
-static time_t mysqlclosetime=0;
-static int mysql_fail=0;
+enum RECORD_RESULT {
+    RECORD_ERROR,
+    RECORD_SUCCESS,
+    RECORD_FULL
+};
 
-static void opennewpostlog()
+static struct record_t log_records[] = {
+     { "usies"          , 100 * 1024 , 0 , NULL , 0 } ,
+     { "user.log"       , 100 * 1024 , 0 , NULL , 0 } ,
+     { "boardusage.log" , 100 * 1024 , 0 , NULL , 0 } ,
+     { "sms.log"        , 10 * 1024  , 0 , NULL , 0 } ,
+     { "debug.log"      , 10 * 1024  , 0 , NULL , 0 } ,
+     { "realcheck.log"  , 10 * 1024  , 0 , NULL , 0 }
+};
+#define LOG_RECORDS_SIZE sizeof(log_records) / sizeof(struct record_t)
+
+// init all records
+static void log_init();
+static void log_clear();
+
+// flush all records
+static void log_flush();
+
+// receive msg from message queue, and forward it to the 
+// public message queue
+static struct bbs_msgbuf* log_rcv(int msqid);
+
+// write msg to file
+static void log_write(struct bbs_msgbuf *msg);
+
+// open fd
+static enum RECORD_RESULT record_open(struct record_t *record);
+
+// close fd
+static enum RECORD_RESULT record_close(struct record_t *record);
+
+// flush record to disk
+static enum RECORD_RESULT record_flush(struct record_t *record);
+
+// append content to record's buffer
+static enum RECORD_RESULT record_append(struct record_t *record, const char *content, size_t size);
+
+// write content to disk
+static enum RECORD_RESULT record_write(struct record_t *record, const char *content, size_t size);
+
+// print header of BBSLOG_POST
+static void print_post_header(struct bbs_msgbuf *msg, char *header, size_t size);
+
+// flush log at 10m
+static void on_log_alarm(int signo)
 {
-	mysql_init (&s);
-
-	if (! my_connect_mysql(&s) ){
-		bbslog("3system","mysql connect error:%s",mysql_error(&s));
-		return;
-	}
-	postlog_start = 1;
-	mysqlclosetime=0;
-	return;
+    log_flush();
+    alarm(flush_interval);
 }
 
-static void closenewpostlog()
+// ends
+static void on_log_exit(int signo)
 {
-	bbslog("3system","mysql log closed");
-	mysql_close(&s);
-	postlog_start=0;
-	mysqlclosetime = time(0);
-}
-#endif
-
-static void openbbslog(int first)
-{
-    int i;
-    for (i = 0; i < sizeof(logconfig) / sizeof(struct taglogconfig); i++) {
-		if (!first && !strcmp(logconfig[i].filename,"boardusage.log") && logconfig[i].fd )
-			continue;
-        if (logconfig[i].filename) {
-            /*logconfig[i].fd = open(logconfig[i].filename, O_WRONLY);
-            if (logconfig[i].fd < 0)
-                logconfig[i].fd = creat(logconfig[i].filename, 0644);*/
-            logconfig[i].fd = open(logconfig[i].filename, O_RDWR | O_CREAT, 0644);
-            if (logconfig[i].fd < 0)
-                bbslog("3error","can't open log file:%s.%s",logconfig[i].filename,strerror(errno));
-        }
-        if (logconfig[i].buf==NULL)
-            logconfig[i].buf = malloc(logconfig[i].bufsize);
-    }
-
-#if defined(NEWPOSTLOG) || defined(NEWBMLOG)
-	if(first || !postlog_start)
-		opennewpostlog();
-#endif
-
-}
-static void writelog(struct bbs_msgbuf *msg)
-{
-    char header[256];
-    struct tm *n;
-    struct taglogconfig *pconf;
-    char ch;
-
-#if defined(NEWPOSTLOG) || defined(NEWBMLOG)
-	if(!postlog_start && mysqlclosetime && time(0)-mysqlclosetime>600)
-		opennewpostlog();
-#endif
-
-#ifdef NEWBMLOG
-	if (msg->mtype == BBSLOG_BM){
-		char sqlbuf[512];
-		struct _new_bmlog * ppl = (struct _new_bmlog *)( &msg->mtext[1]) ;
-		int affect;
-
-		if(!postlog_start)
-			return;
-
-		if(ppl->value == 0)
-			return;
-
-		msg->mtext[0]=0;
-
-		sprintf(sqlbuf, "UPDATE bmlog SET `log%d`=`log%d`+%d WHERE userid='%s' AND bname='%s' AND month=MONTH(CURDATE()) AND year=YEAR(CURDATE()) ;", ppl->type, ppl->type, ppl->value, msg->userid, ppl->boardname );
-
-		if( mysql_real_query(&s,sqlbuf,strlen(sqlbuf)) || (affect=(int)mysql_affected_rows(&s))<0 ){
-			mysql_fail ++;
-			bbslog("3system","mysql bmlog error:%s",mysql_error(&s));
-			if(mysql_fail > 10)
-				closenewpostlog();
-			return;
-		}
-
-		if(affect <= 0){
-			sprintf(sqlbuf, "INSERT INTO bmlog (`id`, `userid`, `bname`, `month`, `year`, `log%d` ) VALUES (NULL, '%s', '%s', MONTH(CURDATE()), YEAR(CURDATE()), '%d' );", ppl->type, msg->userid, ppl->boardname, ppl->value);
-
-			if( mysql_real_query( &s, sqlbuf, strlen(sqlbuf) )){
-				mysql_fail ++;
-				bbslog("3system","mysql bmlog error:%s",mysql_error(&s));
-				if(mysql_fail > 10)
-					closenewpostlog();
-			}else
-				mysql_fail = 0;
-		}else{
-			mysql_fail = 0;
-		}
-
-		return;
-	}
-#endif
-
-#ifdef NEWPOSTLOG
-	if (msg->mtype == BBSLOG_POST && postlog_start){
-
-		char newtitle[161];
-		char sqlbuf[512];
-		struct _new_postlog * ppl = (struct _new_postlog *) ( &msg->mtext[1]) ;
-		char newts[20];
-
-		msg->mtext[0]=0;
-
-		mysql_escape_string(newtitle, ppl->title, strlen(ppl->title));
-
-#ifdef NEWSMTH
-		sprintf(sqlbuf, "INSERT INTO postlog (`id`, `userid`, `bname`, `title`, `time`, `threadid`, `articleid`, `ip`) VALUES (NULL, '%s', '%s', '%s', '%s', '%d', '%d', '%s');", msg->userid, ppl->boardname, newtitle, tt2timestamp(msg->msgtime, newts), ppl->threadid, ppl->articleid, ppl->ip );
-#else
-		sprintf(sqlbuf, "INSERT INTO postlog (`id`, `userid`, `bname`, `title`, `time`, `threadid`, `articleid`) VALUES (NULL, '%s', '%s', '%s', '%s', '%d', '%d');", msg->userid, ppl->boardname, newtitle, tt2timestamp(msg->msgtime, newts), ppl->threadid, ppl->articleid );
-#endif
-
-		if( mysql_real_query( &s, sqlbuf, strlen(sqlbuf) )){
-			mysql_fail ++;
-			bbslog("3system","mysql postlog error:%s",mysql_error(&s));
-			if(mysql_fail > 10)
-				closenewpostlog();
-		}else{
-			mysql_fail = 0;
-
-			return;
-		}
-	}
-
-	if (msg->mtype == BBSLOG_POST){
-		struct _new_postlog * ppl = (struct _new_postlog *) ( &msg->mtext[1]) ;
-
-		msg->mtype = BBSLOG_USER;
-
-    	if ((msg->mtype < 0) || (msg->mtype > sizeof(logconfig) / sizeof(struct taglogconfig)))
-        	return;
-    	pconf = &logconfig[msg->mtype-1];
-
-    	if (pconf->fd<0) return;
-    	n = localtime(&msg->msgtime);
-
-    	snprintf(header, 256, "[%02u/%02u %02u:%02u:%02u %5lu %lu] %s post '%s' on '%s'\n", n->tm_mon + 1, n->tm_mday, n->tm_hour, n->tm_min, n->tm_sec, (long int) msg->pid, msg->mtype, msg->userid, ppl->title, ppl->boardname);
-    	if (pconf->buf) {
-        	if ((int) (pconf->bufptr + strlen(header)) <= pconf->bufsize) {
-            	strcpy(&pconf->buf[pconf->bufptr], header);
-            	pconf->bufptr += strlen(header);
-            	return;
-        	}
-    	}
-
-/*目前log还是分散的，就先lock,seek吧*/
-        writew_lock(pconf->fd, 0, SEEK_SET, 0);
-    	lseek(pconf->fd, 0, SEEK_END);
-
-    	if (pconf->buf && pconf->bufptr) {
-        	write(pconf->fd, pconf->buf, pconf->bufptr);
-        	pconf->bufptr = 0;
-    	}
-        un_lock(pconf->fd, 0, SEEK_SET, 0);
-
-		return;
-	}
-
-#endif
-
-    if ((msg->mtype < 0) || (msg->mtype > sizeof(logconfig) / sizeof(struct taglogconfig)))
-        return;
-    pconf = &logconfig[msg->mtype-1];
-
-    if (pconf->fd<0) return;
-    n = localtime(&msg->msgtime);
-
-    ch=msg->mtext[0];
-    msg->mtext[0]=0;
-    snprintf(header, 256, "[%d-%02u-%02u %02u:%02u:%02u %5lu %lu] %s %c%s", n->tm_year + 1900, n->tm_mon + 1, n->tm_mday, n->tm_hour, n->tm_min, n->tm_sec, (long int) msg->pid, msg->mtype, msg->userid,ch,&msg->mtext[1]);
-    if (pconf->buf) {
-        if ((int) (pconf->bufptr + strlen(header)) <= pconf->bufsize) {
-            strcpy(&pconf->buf[pconf->bufptr], header);
-            pconf->bufptr += strlen(header);
-            return;
-        }
-    }
-
-/*目前log还是分散的，就先lock,seek吧*/
-    writew_lock(pconf->fd, 0, SEEK_SET, 0);
-    lseek(pconf->fd, 0, SEEK_END);
-
-    if (pconf->buf && pconf->bufptr) {
-        write(pconf->fd, pconf->buf, pconf->bufptr);
-        pconf->bufptr = 0;
-    }
-    un_lock(pconf->fd, 0, SEEK_SET, 0);
-}
-
-static void flushlog(int signo)
-{
-    int i;
-    for (i = 0; i < sizeof(logconfig) / sizeof(struct taglogconfig); i++) {
-        struct taglogconfig *pconf;
-
-        pconf = &logconfig[i];
-        if (pconf->fd>=0 && pconf->buf && pconf->bufptr) {
-            writew_lock(pconf->fd, 0, SEEK_SET, 0);
-            lseek(pconf->fd, 0, SEEK_END);
-            write(pconf->fd, pconf->buf, pconf->bufptr);
-            pconf->bufptr = 0;
-            un_lock(pconf->fd, 0, SEEK_SET, 0);
-        }
-        if (signo!=-1)
-            close(pconf->fd);
-    }
-    if (signo==-1) return;
-#if defined(NEWPOSTLOG) || defined(NEWBMLOG)
-	closenewpostlog();
-#endif
+    log_flush();
+    log_clear();
+    redis_close(&redis);
     exit(0);
 }
 
-static void flushBBSlog_exit()
+int main(int argc, char *argv[])
 {
-    flushlog(-1);
-}
-bool gb_trunclog;
-bool truncboard;
-static void trunclog(int signo)
-{
-    int i;
-    flushlog(-1);
-
-    /* see libBBS/log.c:logconf[] */
-    static const char *dirty_rotate[] = {"error.log", "connect.log", "msg.log",
-       "trace.chatd", "trace"};
-    for (i = 0; i < sizeof(dirty_rotate) / sizeof(dirty_rotate[0]); i++) {
-        char buf[MAXPATH];
-        int j;
-
-        if (!dashf(dirty_rotate[i]))
-            continue;
-
-        j=0;
-        while (1) {
-            sprintf(buf,"%s.%d", dirty_rotate[i],j);
-            if (!dashf(buf))
-               break;
-            j++;
-        }
-        f_mv(dirty_rotate[i],buf);
-    }
-    
-    for (i = 0; i < sizeof(logconfig) / sizeof(struct taglogconfig); i++) {
-        struct taglogconfig *pconf;
-
-		if (! strcmp(logconfig[i].filename,"boardusage.log"))
-			continue;
-        pconf = &logconfig[i];
-        if (pconf->fd>=0) {
-        	char buf[MAXPATH];
-        	int j;
-        	close(pconf->fd);
-		j=0;
-        	while (1) {
-        	    sprintf(buf,"%s.%d",pconf->filename,j);
-        	    if (!dashf(buf))
-        	    	break;
-		    j++;
-        	}
-        	f_mv(pconf->filename,buf);
-        }
-    }
-    openbbslog(0);
-    gb_trunclog=true;
-}
-
-static void truncboardlog(int signo)
-{
-    int i;
-    flushlog(-1);
-    
-    for (i = 0; i < sizeof(logconfig) / sizeof(struct taglogconfig); i++) {
-		if (strcmp(logconfig[i].filename,"boardusage.log"))
-			continue;
-        if (logconfig[i].fd>=0) {
-        	close(logconfig[i].fd);
-        	f_mv(logconfig[i].filename,"boardusage.log.0");
-        }
-        if (logconfig[i].filename) {
-            /*logconfig[i].fd = open(logconfig[i].filename, O_WRONLY);
-            if (logconfig[i].fd < 0)
-                logconfig[i].fd = creat(logconfig[i].filename, 0644);*/
-            logconfig[i].fd = open(logconfig[i].filename, O_RDWR | O_CREAT, 0644);
-            if (logconfig[i].fd < 0)
-                bbslog("3error","can't open log file:%s.%s",logconfig[i].filename,strerror(errno));
-        }
-        if (logconfig[i].buf==NULL)
-            logconfig[i].buf = malloc(logconfig[i].bufsize);
-    }
-    truncboard=true;
-}
-
-static void flushBBSlog_time(int signo)
-{
-    flushlog(-1);
-    alarm(60*10); /*十分钟flush一次*/
-}
-
-static void do_truncboardlog()
-{
-    truncboard=false;
-}
-
-static void do_trunclog()
-{
-    gb_trunclog=false;
-}
-
-int main()
-{
-    int msqid, i;
-    struct bbs_msgbuf *msg;
-
-    struct sigaction act;
-
     umask(027);
 
     chdir(BBSHOME);
@@ -400,41 +100,333 @@ int main()
     setreuid(BBSUID, BBSUID);
     setgid(BBSGID);
     setregid(BBSGID, BBSGID);
-    if (dodaemon("bbslogd", true, true)) {
+
+    if (!debug && dodaemon("bbslogd", true, true)) {
         bbslog("3error", "bbslogd had already been started!");
         return 0;
     }
-    atexit(flushBBSlog_exit);
-    bzero(&act, sizeof(act));
-    act.sa_handler = flushlog;
-    sigaction(SIGTERM, &act, NULL);
-    sigaction(SIGABRT, &act, NULL);
-    sigaction(SIGHUP, &act, NULL);
-    act.sa_handler = flushBBSlog_time;
-    sigaction(SIGALRM, &act, NULL);
-    act.sa_handler = trunclog;
-    sigaction(SIGUSR1, &act, NULL);
-    act.sa_handler = truncboardlog;
-    sigaction(SIGUSR2, &act, NULL);
-    alarm(60*10); /*十分钟flush一次*/
 
-    msqid = init_bbslog();
-    if (msqid < 0)
+    signal(SIGALRM , on_log_alarm );
+    signal(SIGTERM , on_log_exit  );
+    signal(SIGINT  , on_log_exit  );
+    signal(SIGABRT , on_log_exit  );
+    signal(SIGHUP  , on_log_exit  );
+    signal(SIGPIPE , SIG_IGN      );
+
+    int msqid = init_bbslog();
+    if (msqid < 0) {
+        fprintf (stderr, "init_bbslog: %d\n", msqid);
         return -1;
+    }
+    fprintf (stderr, "message queue of bbsd is ok: %d\n", msqid);
 
-    gb_trunclog=false;
-    truncboard=false;
-    openbbslog(1);
-    while (1) {
-        if ((msg = rcvlog(msqid)) != NULL)
-            writelog(msg);
-        if (gb_trunclog)
-        	do_trunclog();
-		else if(truncboard)
-			do_truncboardlog();
+    // init redis
+    if (redis_open(&redis) == REDIS_OK) {
+        fprintf (stderr, "Redis opened\n");
     }
-    flushlog(-1);
-    for (i = 0; i < sizeof(logconfig) / sizeof(struct taglogconfig); i++) {
-        free(logconfig[i].buf);
+
+    // init logs
+    log_init();
+    alarm(flush_interval);
+
+    // enter event loop
+    struct bbs_msgbuf *msg;
+    while ((msg = log_rcv(msqid)) != NULL) {
+        if (debug) {
+            fprintf (stderr, "msg: %d %s\n", (int)msg->mtype, msg->mtext);
+        }
+
+        log_write(msg);
     }
+
+    // clean everything
+    on_log_exit(0);
+
+    return 0;
+}
+
+void log_init()
+{
+    int i;
+    for (i = 0; i < LOG_RECORDS_SIZE; i++) {
+        struct record_t *record = log_records + i;
+        record->buf = malloc(record->bufsize);
+    }
+}
+
+void log_clear()
+{
+    int i;
+    for (i = 0; i < LOG_RECORDS_SIZE; i++) {
+        struct record_t *record = log_records + i;
+        free(record->buf);
+    }
+}
+
+void log_flush()
+{
+    int i;
+    for (i = 0; i < LOG_RECORDS_SIZE; i++) {
+        struct record_t *record = log_records + i;
+        record_flush(record);
+    }
+}
+
+struct bbs_msgbuf* log_rcv(int msqid)
+{
+    static char buf[1024];
+    struct bbs_msgbuf *msg = (struct bbs_msgbuf *) buf;
+
+    // grab memory from message queue
+    int retv = msgrcv(msqid, msg, sizeof(buf) - sizeof(msg->mtype) - 2, 0, MSG_NOERROR);
+    while (retv < 0) {
+        fprintf (stderr, "msgrcv failed: %s\n", strerror(errno));
+
+        // restart
+        if (errno == EINTR) {
+            retv = msgrcv(msqid, msg, sizeof(buf) - sizeof(msg->mtype) - 2, 0, MSG_NOERROR);
+        } else {
+            bbslog("3error", "bbslogd(rcvlog):%s", strerror(errno));
+            return NULL;
+        }
+    }
+
+    if (debug) fprintf (stderr, "msgrcv returned: %d\n", retv);
+
+    retv -= (char*)msg->mtext - (char*)&msg->msgtime;
+
+    // Add new line for real logs
+    switch (msg->mtype) {
+    case BBSLOG_POST:
+    case BBSLOG_DELETE:
+    case BBSLOG_UPDATE:
+    case BBSLOG_READ:
+        break;
+    default:
+        while (retv > 0 && msg->mtext[retv - 1] == 0) retv--;
+        if (retv == 0) return NULL;
+        if (msg->mtext[retv - 1] != '\n') {
+            msg->mtext[retv] = '\n';
+            retv++;
+        }
+        msg->mtext[retv] = 0;
+
+        return msg;
+    }
+
+    // guard
+    if (msg->mtype == BBSLOG_POST && retv <= sizeof(struct _new_postlog))
+        return NULL;
+
+    // forward and publish to redis
+    int retries = 0;
+    while (retries < 4) {
+        // check connection condition
+        if (!redis.con || redis.con->err) {
+            fprintf (stderr, "Trying to reconnect to redis: %d\n", retries);
+            ++retries;
+
+            redis_close(&redis);
+            redis_open(&redis);
+            continue;
+        }
+
+        const int message_len = 64;
+        char message[message_len];
+        const char *argv[3] = { "PUBLISH", NULL, message };
+
+        struct _new_postlog *ppl;
+
+        // set command
+        switch (msg->mtype) {
+        case BBSLOG_POST:
+            ppl = (struct _new_postlog*)(&msg->mtext[1]) ;
+            argv[1] = "event:post";
+            snprintf(message, message_len, "%lu:%s:%lu",
+                    (unsigned long)msg->msgtime,
+                    ppl->boardname,
+                    (unsigned long)ppl->postid);
+            break;
+        case BBSLOG_DELETE:
+            argv[1] = "event:delete";
+            snprintf(message, message_len, "%lu:%s:%lu",
+                    (unsigned long)msg->msgtime,
+                    msg->mtext,
+                    (unsigned long)msg->pid);
+            break;
+        case BBSLOG_UPDATE:
+            argv[1] = "event:update";
+            snprintf(message, message_len, "%lu:%s:%lu",
+                    (unsigned long)msg->msgtime,
+                    msg->mtext,
+                    (unsigned long)msg->pid);
+            break;
+        case BBSLOG_READ:
+            argv[1] = "event:read";
+            argv[2] = msg->mtext;
+            break;
+        }
+
+        // send command
+        redisReply *reply = redisCommandArgv(redis.con, 3, argv, NULL);
+
+        // check result of redisCommand
+        if (reply == NULL) {
+            bbslog("3error", "bbslogd(log_rcv) redisCommand %s", redis.con->errstr);
+            continue;
+        }
+
+        if (debug) fprintf (stderr, "published\n");
+
+        if (reply->type == REDIS_REPLY_ERROR) {
+            bbslog("3error", "bbslogd(log_rcv) redisCommand error %s", reply->str);
+
+            redis_close(&redis);
+            freeReplyObject(reply);
+            continue;
+        }
+
+        if (reply->type == REDIS_REPLY_INTEGER)
+            fprintf (stderr, "redisCommand: %d\n", (int)reply->integer);
+
+        freeReplyObject(reply);
+
+        return msg;
+    }
+
+    return msg;
+}
+
+void log_write(struct bbs_msgbuf *msg)
+{
+    int index = -1;
+
+    // print BBSLOG_POST logs as BBSLOG_USER
+    index = msg->mtype == BBSLOG_POST ? BBSLOG_USER : msg->mtype;
+
+    // log range
+    if (index < 1 || index > LOG_RECORDS_SIZE)
+        return;
+
+    struct record_t *record = log_records + (index - 1);
+
+    char ch = msg->mtext[0];
+    msg->mtext[0] = 0;
+
+    // print header
+    char header[256];
+    if (msg->mtype == BBSLOG_POST) {
+        print_post_header(msg, header, 256);
+    } else {
+        struct tm *n;
+        n = localtime(&msg->msgtime);
+
+        snprintf(header, 256,
+                 "[%02u/%02u %02u:%02u:%02u %5lu %lu] %s %c%s",
+                 /* mon/day */ n->tm_mon + 1, n->tm_mday,
+                 /* h:m:s */   n->tm_hour, n->tm_min, n->tm_sec,
+                 (long int) msg->pid,
+                 msg->mtype,
+                 msg->userid,
+                 ch,
+                 &msg->mtext[1]);
+    }
+    int header_len = strlen(header);
+
+    // write to buffer
+    if (RECORD_FULL == record_append(record, header, header_len)) {
+        // or flush and then write to disk
+        record_flush(record);
+        record_write(record, header, header_len);
+    }
+}
+
+enum RECORD_RESULT record_open(struct record_t *record)
+{
+    record->fd = open(record->filename, O_RDWR | O_CREAT, 0644);
+    if (record->fd < 0) {
+        bbslog("3error", "can't open log file:%s.%s", record->filename, strerror(errno));
+        return RECORD_ERROR;
+    }
+
+    return RECORD_SUCCESS;
+}
+
+enum RECORD_RESULT record_close(struct record_t *record)
+{
+    close(record->fd);
+
+    return RECORD_SUCCESS;
+}
+
+enum RECORD_RESULT record_flush(struct record_t *record)
+{
+    if (NULL == record) {
+        fprintf (stderr, "Invalid record in record_flush\n");
+        return RECORD_ERROR;
+    }
+
+    if (debug) fprintf (stderr, "record_flush: %s\n", record->filename);
+
+    // flush
+    if (record->buf && record->cur > 0) {
+        record_write(record, record->buf, record->cur);
+        record->cur = 0;
+    }
+
+    return RECORD_SUCCESS;
+}
+
+enum RECORD_RESULT record_append(struct record_t *record, const char *content, size_t size)
+{
+    if (NULL == record) {
+        fprintf (stderr, "Invalid record in record_flush\n");
+        return RECORD_ERROR;
+    }
+
+    if (record->buf && (record->cur + size <= record->bufsize)) {
+        memcpy(record->buf + record->cur, content, size);
+        record->cur += size;
+
+        if (debug) fprintf (stderr, "record_append: %s %s\n", record->filename, content);
+        return RECORD_SUCCESS;
+    }
+
+    fprintf (stderr, "record full: %s\n", record->filename);
+    return RECORD_FULL;
+}
+
+enum RECORD_RESULT record_write(struct record_t *record, const char *content, size_t size)
+{
+    if (NULL == record) {
+        fprintf (stderr, "Invalid record in record_flush\n");
+        return RECORD_ERROR;
+    }
+
+    record_open(record);
+
+    writew_lock(record->fd, 0, SEEK_SET, 0);
+    lseek(record->fd, 0, SEEK_END);
+
+    int ret = write(record->fd, content, size);
+
+    un_lock(record->fd, 0, SEEK_SET, 0);
+
+    record_close(record);
+
+    if (-1 == ret) {
+        fprintf (stderr, "record_write failed\n");
+        return RECORD_ERROR;
+    }
+
+    if (debug) fprintf (stderr, "record_write: %s %s\n", record->filename, content);
+    return RECORD_SUCCESS;
+}
+
+void print_post_header(struct bbs_msgbuf *msg, char *header, size_t size)
+{
+    struct _new_postlog *ppl = (struct _new_postlog*)(&msg->mtext[1]) ;
+    struct tm *n = localtime(&msg->msgtime);
+
+    snprintf(header, size, "[%02u/%02u %02u:%02u:%02u %5lu %lu] %s post '%s' on '%s'\n", n->tm_mon + 1, n->tm_mday, n->tm_hour, n->tm_min, n->tm_sec, (long int) msg->pid, msg->mtype, msg->userid, ppl->title, ppl->boardname);
 }
