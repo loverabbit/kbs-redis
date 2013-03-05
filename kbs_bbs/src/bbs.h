@@ -620,6 +620,13 @@ enum BBSLOG_TYPE {
     BBSLOG_DEBUG        = 5,
     BBSLOG_POST         = 6,
     BBSLOG_BM           = 7
+#ifdef REDIS
+    ,
+    BBSLOG_DELETE       = 9,
+    BBSLOG_UPDATE       = 10,
+    BBSLOG_MAIL         = 11,
+    BBSLOG_READ         = 12
+#endif /* REDIS */
 };
 
 enum BBSPOST_MODE {
