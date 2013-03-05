@@ -285,6 +285,34 @@ int init_bbslog()
     return msqid;
 }
 
+#ifdef REDIS
+void bbs_log_event(enum BBSLOG_TYPE type, const char *board, int id)
+{
+    char buf[512];
+    struct bbs_msgbuf *msg = (struct bbs_msgbuf *) buf;
+
+    if (disablelog)
+        return;
+    if (logmsqid == -1) {
+        logmsqid = init_bbslog();
+        if (logmsqid ==-1) {
+            disablelog = 1;
+            return;
+        }
+    }
+
+    msg->mtype = type;
+    msg->pid = id;
+    msg->msgtime = time(0);
+    strncpy(msg->mtext, board, sizeof(buf) - ((char *) msg->mtext - (char *) msg));
+    if (getSession()&&getSession()->currentuser)
+        strncpy(msg->userid, getSession()->currentuser->userid, IDLEN);
+    else
+        strncpy(msg->userid, "[null]", IDLEN);
+
+    msgsnd(logmsqid, msg, strlen(msg->mtext) + ((char *) msg->mtext - (char *) msg) - sizeof(msg->mtype) + 1, IPC_NOWAIT | MSG_NOERROR);
+}
+#endif /* REDIS */
 
 void newbbslog(int type, const char *fmt, ...)
 {

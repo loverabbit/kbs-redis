@@ -4262,6 +4262,9 @@ int edit_post(struct _select_def* conf,struct fileheader *fileinfo,void* extraar
     }
     unlink(backup);
     newbbslog(BBSLOG_USER, "edited post '%s' on %s", fileinfo->title, currboard->filename);
+#ifdef REDIS
+    bbs_log_event(BBSLOG_UPDATE, currboard->filename, fileinfo->id);
+#endif /* REDIS */
     if (edit_top)
         return DIRCHANGED;
     return FULLUPDATE;
@@ -4443,6 +4446,9 @@ int edit_title(struct _select_def* conf,struct fileheader *fileinfo,void* extraa
             }
         }
         setboardtitle(currboard->filename, 1);
+#ifdef REDIS
+        bbs_log_event(BBSLOG_UPDATE, currboard->filename, fileinfo->id);
+#endif /* REDIS */
 #ifdef BOARD_SECURITY_LOG
         /* 由于要记录原标题，所以不能用change_post_flag来记录 */
         FILE *fn;

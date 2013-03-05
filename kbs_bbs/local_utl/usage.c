@@ -2,6 +2,9 @@
 #include <stdio.h>
 #include "bbs.h"
 #include "urlencode.c"
+#ifdef REDIS
+#include "../deps/hiredis/hiredis.h"
+#endif
 
 struct binfo {
     char boardname[20];
@@ -223,6 +226,26 @@ static void gen_board_rank_xml(int brdcount, struct binfo *bi)
     }
     fprintf(fp, "</BoardList>\n");
     fclose(fp);
+
+#ifdef REDIS
+    redisContext *redis = redisConnect("127.0.0.1", 6379);
+    redisAppendCommand(redis, "DEL stat:board");
+
+    for (i = 0; i < brdcount; i++) {
+        bp = getbcache(bi[i].boardname);
+        if (bp == NULL || (bp->flag & BOARD_GROUP))
+            continue;
+        if ((sec_id = get_seccode_index(bp->title[0])) < 0)
+            continue;
+        redisAppendCommand(redis, "RPUSH stat:board %d:%s:%d:%d:%s",
+                sec_id, bi[i].boardname, bi[i].times, bi[i].sum, bi[i].expname);
+    }
+
+    redisReply *reply;
+    redisGetReply(redis, (void*)&reply);
+    freeReplyObject(reply);
+    redisFree(redis);
+#endif
 }
 #endif /* ! NEWSMTH */
 

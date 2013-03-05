@@ -106,6 +106,9 @@ extern "C"
 
     */
     int bbslog(const char *from, const char *fmt, ...);
+#ifdef REDIS
+    void bbs_log_event(enum BBSLOG_TYPE type, const char *board, int id);
+#endif /* REDIS */
 #ifdef NEWPOSTLOG
     void newpostlog(const char *userid, const char *boardname, const char *title, int groupid, int id);
 #endif

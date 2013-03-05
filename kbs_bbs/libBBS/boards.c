@@ -959,6 +959,13 @@ int brc_board_unread(int bid, session_t* session)
 
 void brc_add_read(unsigned int fid, int bid, session_t* session)
 {
+#ifdef REDIS
+//捕捉阅读事件，用于阅读数统计
+    char text[512];
+    snprintf(text, 512, "%s:%lu:%s",
+            (getboard(bid))->filename, (unsigned long)fid, session->fromhost);
+    bbs_log_event(BBSLOG_READ, text, 0);
+#endif
     int n, i;
 
     if (!valid_brc(bid, session)) return;

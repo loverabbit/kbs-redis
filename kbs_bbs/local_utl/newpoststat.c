@@ -6,6 +6,9 @@
 #include <stdio.h>
 #include <time.h>
 #include "bbs.h"
+#ifdef REDIS
+#include "../deps/hiredis/hiredis.h"
+#endif
 #include "urlencode.c"
 
 #ifdef NEWPOSTSTAT
@@ -792,6 +795,51 @@ void gen_secs_hot_subjects_xml(int mytype)
     for (i=0; i<SECNUM; i++) {
         gen_sec_hot_subjects_xml(mytype, i);
     }
+
+#ifdef REDIS
+    redisContext *redis = redisConnect("127.0.0.1", 6379);
+    const char *pattern = "stat:%s_sec%d:%s";
+    char key[128];
+    char value[512];
+    const char *argv[3] = { "RPUSH", key, value };
+
+#define RPUSH(ikey,itype,ivalue) {\
+    snprintf(key, 128, pattern, myfile[mytype], secid, ikey);\
+    snprintf(value, 512, itype, ivalue);\
+    redisAppendCommandArgv(redis, 3, argv, NULL);\
+}
+
+#define DEL(ikey) {\
+    snprintf(key, 128, pattern, myfile[mytype], secid, ikey);\
+    snprintf(value, 512, "DEL %s", key);\
+    redisAppendCommand(redis, value);\
+}
+
+    int secid;
+    for (secid = 0; secid < SECNUM; ++secid) {
+        DEL("title");
+        DEL("author");
+        DEL("board");
+        DEL("replies");
+        DEL("time");
+        DEL("id");
+        for (i = 0; i < sectopnum[secid]; i++) {
+            RPUSH("title"   , "%s"  , sectop[secid][i].title);
+            RPUSH("author"  , "%s"  , sectop[secid][i].userid);
+            RPUSH("board"   , "%s"  , sectop[secid][i].board);
+            RPUSH("replies" , "%lu" , (unsigned long)sectop[secid][i].number);
+            RPUSH("time"    , "%lu" , (unsigned long)sectop[secid][i].date);
+            RPUSH("id"      , "%lu" , (unsigned long)sectop[secid][i].groupid);
+        }
+    }
+    redisReply *reply;
+    redisGetReply(redis, (void*)&reply);
+    freeReplyObject(reply);
+    redisFree(redis);
+
+#undef RPUSH
+#undef DEL
+#endif
 }
 
 void gen_blessing_list_xml()
@@ -822,6 +870,48 @@ void gen_blessing_list_xml()
 
         fclose(fp);
     }
+
+#ifdef REDIS
+    redisContext *redis = redisConnect("127.0.0.1", 6379);
+    const char *pattern = "stat:%s:%s";
+    char key[128];
+    char value[512];
+    const char *argv[3] = { "RPUSH", key, value };
+
+#define RPUSH(ikey,itype,ivalue) {\
+    snprintf(key, 128, pattern, myfile[4], ikey);\
+    snprintf(value, 512, itype, ivalue);\
+    redisAppendCommandArgv(redis, 3, argv, NULL);\
+}
+
+#define DEL(ikey) {\
+    snprintf(key, 128, pattern, myfile[4], ikey);\
+    snprintf(value, 512, "DEL %s", key);\
+    redisAppendCommand(redis, value);\
+}
+
+    DEL("title");
+    DEL("author");
+    DEL("board");
+    DEL("replies");
+    DEL("time");
+    DEL("id");
+    for (i = 0; i < topnum; i++) {
+        RPUSH("title"   , "%s"  , top[i].title);
+        RPUSH("author"  , "%s"  , top[i].userid);
+        RPUSH("board"   , "%s"  , top[i].board);
+        RPUSH("replies" , "%lu" , (unsigned long)top[i].number);
+        RPUSH("time"    , "%lu" , (unsigned long)top[i].date);
+        RPUSH("id"      , "%lu" , (unsigned long)top[i].groupid);
+    }
+    redisReply *reply;
+    redisGetReply(redis, (void*)&reply);
+    freeReplyObject(reply);
+    redisFree(redis);
+
+#undef RPUSH
+#undef DEL
+#endif
 }
 
 void gen_hot_subjects_xml(int mytype)
@@ -857,11 +947,58 @@ void gen_hot_subjects_xml(int mytype)
 
         fclose(fp);
     }
+
+#ifdef REDIS
+    redisContext *redis = redisConnect("127.0.0.1", 6379);
+    const char *pattern = "stat:%s:%s";
+    char key[128];
+    char value[512];
+    const char *argv[3] = { "RPUSH", key, value };
+
+#define RPUSH(ikey,itype,ivalue) {\
+    snprintf(key, 128, pattern, myfile[mytype], ikey);\
+    snprintf(value, 512, itype, ivalue);\
+    redisAppendCommandArgv(redis, 3, argv, NULL);\
+}
+
+#define DEL(ikey) {\
+    snprintf(key, 128, pattern, myfile[mytype], ikey);\
+    snprintf(value, 512, "DEL %s", key);\
+    redisAppendCommand(redis, value);\
+}
+
+    DEL("title");
+    DEL("author");
+    DEL("board");
+    DEL("replies");
+    DEL("time");
+    DEL("id");
+    for (i = 0; i < topnum; i++) {
+        RPUSH("title"   , "%s"  , top[i].title);
+        RPUSH("author"  , "%s"  , top[i].userid);
+        RPUSH("board"   , "%s"  , top[i].board);
+        RPUSH("replies" , "%lu" , (unsigned long)top[i].number);
+        RPUSH("time"    , "%lu" , (unsigned long)top[i].date);
+        RPUSH("id"      , "%lu" , (unsigned long)top[i].groupid);
+    }
+    redisReply *reply;
+    redisGetReply(redis, (void*)&reply);
+    freeReplyObject(reply);
+    redisFree(redis);
+
+#undef RPUSH
+#undef DEL
+#endif
 }
 
 void poststat(int mytype)
 {
+#ifdef REDIS     //KBS 统计十大失败时，不更新十大数据
+    if (get_top(mytype) == 0)
+		return;
+#else
     get_top(mytype);
+#endif /* REDIS */
     writestat(mytype);
     if (mytype==0)
         backup_top();

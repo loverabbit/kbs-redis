@@ -818,6 +818,9 @@ void cancelpost(const char *board, const char *userid, struct fileheader *fh, in
         setbdir((owned) ? DIR_MODE_JUNK : DIR_MODE_DELETED, oldpath, board);
         append_record(oldpath, fh, sizeof(struct fileheader));
     }
+#ifdef REDIS
+    bbs_log_event(BBSLOG_DELETE, board, fh->id);
+#endif
 }
 
 void edit_backup(const char *board, const char *userid, const char *oldpath, struct fileheader *fh, session_t* session)
@@ -3139,6 +3142,9 @@ int change_post_flag(struct write_dir_arg *dirarg, int currmode, const struct bo
         }
         board_security_report(NULL, getCurrentUser(), buf, board->filename, originFh);
     }
+#endif
+#ifdef REDIS
+    bbs_log_event(BBSLOG_UPDATE, board->filename, fileinfo->id);
 #endif
     return ret;
 }
