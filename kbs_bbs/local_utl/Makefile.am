@@ -13,5 +13,7 @@ bin_PROGRAMS = poststat static usage Xhtml Bhtml listonline \
 EXTRA_DIST = urlencode.c
 EXTRA_PROGRAMS = 
 LDADD=-lBBS -lsystem -L../libBBS -L../libsystem
+newpoststat_LDADD=$(LDADD) $(top_builddir)/deps/hiredis/libhiredis.a
+usage_LDADD=$(LDADD) $(top_builddir)/deps/hiredis/libhiredis.a
 AM_CFLAGS= -I$(top_srcdir)/src
 CLEANFILES=@EXTRA_CLEAN@
