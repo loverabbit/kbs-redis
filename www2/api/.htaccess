@@ -1,0 +1,41 @@
+<Files common.php>
+   order allow,deny
+   deny from all
+</Files>
+
+RewriteEngine on
+
+# 忽略js文件夹
+RewriteCond %{REQUEST_URI} "/js/"
+RewriteRule (.*) $1 [L]
+
+# 根据后缀标定格式
+RewriteRule ^(.*)\.js$   $1.napi?napi_mode=js   [NC,QSA]
+RewriteRule ^(.*)\.json$ $1.napi?napi_mode=json [NC,QSA]
+RewriteRule ^(.*)\.rss$  $1.napi?napi_mode=rss  [NC,QSA]
+
+# 用户接口别名
+RewriteRule ^user\.api$             user/get.php         [NC,L,QSA]
+RewriteRule ^user/([a-zA-Z]+)\.api$ user/get.php?name=$1 [NC,L,QSA]
+
+# 好友接口别名
+RewriteRule ^friends\.api$ friends/online.php [NC,L,QSA]
+
+# 邮箱别名
+RewriteRule ^mailbox/inbox\.api$   mailbox/get.php?type=0 [NC,L,QSA]
+RewriteRule ^mailbox/sent\.api$    mailbox/get.php?type=1 [NC,L,QSA]
+RewriteRule ^mailbox/deleted\.api$ mailbox/get.php?type=2 [NC,L,QSA]
+
+# 版面话题别名
+RewriteRule ^board/list\.api$                     board/list.php               [NC,L,QSA]
+RewriteRule ^board/([0-9a-zA-Z_]+)/markread\.api$ board/markread.php?name=$1   [NC,L,QSA]
+RewriteRule ^board/([0-9a-zA-Z_]+)\.api$          board/get.php?name=$1        [NC,L,QSA]
+RewriteRule ^topic/([0-9a-zA-Z_]+)/([0-9]+)\.api$ topic/get.php?board=$1&id=$2 [NC,L,QSA]
+RewriteRule ^hot/section/([0-9]+)\.api$           hot/section.php?section=$1   [NC,L,QSA]
+
+# 附件接口别名
+RewriteRule ^attachments\.api$ attachment/list.php [NC,L,QSA]
+RewriteRule ^attachment/get/([0-9a-zA-Z_]+)/([0-9]+)/([0-9]+)/[^/]*$ attachment/get.php?board=$1&id=$2&attid=$3 [NC,L,QSA]
+
+# 无别名直接映射
+RewriteRule ^(.*).api$ $1.php [NC,L,QSA]
