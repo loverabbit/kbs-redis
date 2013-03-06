@@ -245,7 +245,7 @@ struct bbs_msgbuf* log_rcv(int msqid)
             snprintf(message, message_len, "%lu:%s:%lu",
                     (unsigned long)msg->msgtime,
                     ppl->boardname,
-                    (unsigned long)ppl->postid);
+                    (unsigned long)ppl->articleid);
             break;
         case BBSLOG_DELETE:
             argv[1] = "event:delete";

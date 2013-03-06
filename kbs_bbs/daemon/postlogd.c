@@ -91,7 +91,7 @@ void write_to_mysql(const char *board, time_t time, struct fileheader *fh) {
     mysql_escape_string(title, fh->title, strlen(fh->title));
     char sqlbuf[512];
     char newts[24];
-    sprintf(sqlbuf, "INSERT INTO postlog(userid, bname, title, time, threadid, postid, replyid) VALUES ('%s', '%s', '%s', '%s', '%d' , '%d');",
+    sprintf(sqlbuf, "INSERT INTO postlog(userid, bname, title, time, threadid, postid) VALUES ('%s', '%s', '%s', '%s', '%d' , '%d');",
                     fh->owner, board, title, tt2timestamp(time, newts), fh->groupid, fh->id);
 
     if (mysql_real_query(&s, sqlbuf, strlen(sqlbuf))) {
