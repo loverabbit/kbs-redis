@@ -213,11 +213,23 @@ PHP_FUNCTION(bbs_checkuserpasswd)
     char *pw;
     int pw_len;
     int unum;
+#ifdef SBBSAPI
+    long ismd5 = 0;
+    int ac = ZEND_NUM_ARGS();
+#endif /* SBBS fool:checkuserpassword增加ismd5参数 2012.3.29*/
     struct userec *user;
 
+#ifdef SBBSAPI
+    if (ac != 2 || zend_parse_parameters(2 TSRMLS_CC, "ss", &s, &s_len, &pw, &pw_len) != SUCCESS) {
+        if (ac!= 3 || zend_parse_parameters(3 TSRMLS_CC, "ssl", &s, &s_len, &pw, &pw_len, &ismd5) != SUCCESS) {
+            WRONG_PARAM_COUNT;
+        }
+    }
+#else
     if (zend_parse_parameters(2 TSRMLS_CC, "ss", &s, &s_len, &pw, &pw_len) != SUCCESS) {
         WRONG_PARAM_COUNT;
     }
+#endif /* SBBSAPI */
     if (s_len > IDLEN)
         s[IDLEN] = 0;
     if (pw_len > PASSLEN)
@@ -228,9 +240,18 @@ PHP_FUNCTION(bbs_checkuserpasswd)
     if (!(unum = getuser(s, &user))) {
         RETURN_LONG(-2);
     }
-    if (!checkpasswd2(pw, user)) {
-        RETURN_LONG(-3);
+#ifdef SBBSAPI
+    if (ismd5) {
+        if (memcmp(pw, user->md5passwd, MD5PASSLEN))
+            RETURN_LONG(-4);
+    } else {
+#endif /* SBBSAPI */
+        if (!checkpasswd2(pw, user)) {
+            RETURN_LONG(-3);
+        }
+#ifdef SBBSAPI
     }
+#endif /* SBBSAPI */
     RETURN_LONG(0);
 }
 

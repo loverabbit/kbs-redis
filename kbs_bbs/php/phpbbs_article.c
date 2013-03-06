@@ -736,3 +736,60 @@ PHP_FUNCTION(bbs_search_articles)
     close(fd);
 }
 
+#ifdef SBBSAPI
+/**
+ * Get groupid
+ * prototype:
+ * int bbs_get_article_gid(int bid, int id);
+ *
+ * @return article's gid, if failed then return -1
+ */
+PHP_FUNCTION(bbs_get_article_gid) {
+    long bid, id;
+
+    if (ZEND_NUM_ARGS() != 2 || 
+        zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "ll", &bid, &id) == FAILURE)
+    {
+        WRONG_PARAM_COUNT;
+    }
+
+    /* check board */
+    const struct boardheader *bp;
+    if (!(bp = getboard(bid)))
+        RETURN_FALSE;
+
+    /* ready to read */
+	char dirpath[STRLEN];
+	setbdir(0, dirpath, bp->filename);
+
+    /* read article */
+    int fd;
+    if((fd = open(dirpath, O_RDWR, 0644)) < 0)
+        RETURN_LONG(fd);
+
+	fileheader_t articles;
+    if (!get_records_from_id(fd, id, &articles, 1, NULL)) {
+        close(fd);
+        RETURN_LONG(id);
+    }
+
+    /* return gid */
+    close(fd);
+    RETURN_LONG(articles.groupid);
+}
+
+PHP_FUNCTION(bbs2_record_is_unread) {
+    char *board;
+    size_t blen;
+    long id;
+
+    if (zend_parse_parameters(2 TSRMLS_CC, "sl", &board, &blen, &id) == FAILURE) {
+        WRONG_PARAM_COUNT;
+    }
+
+    if (getCurrentUser() == NULL) RETURN_LONG(0);
+
+    brc_initial(getCurrentUser()->userid, board, getSession());
+    RETURN_LONG(brc_unread(id, getSession()) ? 1 : 0);
+}
+#endif

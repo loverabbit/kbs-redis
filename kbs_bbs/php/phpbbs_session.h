@@ -8,6 +8,9 @@ PHP_FUNCTION(bbs_getonline_user_list);
 PHP_FUNCTION(bbs_getonlineuser);
 PHP_FUNCTION(bbs_getonlinenumber);
 PHP_FUNCTION(bbs_getonlineusernumber);
+#ifdef SBBSAPI
+PHP_FUNCTION(bbs_setuser_nologin);
+#endif /* SBBSAPI */
 PHP_FUNCTION(bbs_getwwwguestnumber);
 PHP_FUNCTION(bbs_countuser);
 
@@ -35,6 +38,7 @@ PHP_FUNCTION(bbs_getsessionid);
     PHP_FE(bbs_getonlineuser, NULL) \
     PHP_FE(bbs_getonlinenumber, NULL) \
     PHP_FE(bbs_getonlineusernumber,NULL) \
+    PHP_FE(bbs_setuser_nologin, NULL) \
     PHP_FE(bbs_getwwwguestnumber,NULL) \
     PHP_FE(bbs_countuser, NULL) \
     PHP_FE(bbs_getcurrentuinfo, NULL) \

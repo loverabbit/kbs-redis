@@ -552,11 +552,72 @@ PHP_FUNCTION(bbs_getboards)
     }
 
 }
+#ifdef SBBSAPI
+//SBBS fool:增加忽略用户权限的getboards
+PHP_FUNCTION(bbs_super_getboards)
+{
+    if (ZEND_NUM_ARGS() > 0) {
+        WRONG_PARAM_COUNT;
+    }
 
+    int total = get_boardcount();
 
+    array_init(return_value);
 
+    struct boardheader const *board;
+    int n;
+    for (n = 0; n < total; n++) {
+        board = getboard(n + 1);
 
+        if (!board)
+            continue;
+        if (*(board->filename) == 0)
+            continue;
 
+        zval *element;
+        ALLOC_INIT_ZVAL(element);
+        array_init(element);
+
+        add_assoc_long(element, "BID", n + 1);
+        add_assoc_long(element, "FLAG", board->flag);
+        add_assoc_string(element, "NAME", (char*)board->filename, 1);
+        add_assoc_string(element, "DESC", (char*)board->title + 13, 1);
+
+        add_next_index_zval(return_value, element);
+    }
+}
+
+PHP_FUNCTION(bbs2_access_board)
+{
+    char *board, *user;
+    int blen, ulen;
+    board = user = NULL;
+
+    int argc = ZEND_NUM_ARGS();
+    if (2 == argc && SUCCESS == zend_parse_parameters(2 TSRMLS_CC, "ss", &user, &ulen, &board, &blen))
+        ;
+    else
+    if (1 == argc && SUCCESS == zend_parse_parameters(1 TSRMLS_CC, "s", &board, &blen))
+        ;
+    else
+        WRONG_PARAM_COUNT;
+
+    struct userec *su;
+    if (NULL == user) {
+        su = getCurrentUser();
+    } else {
+        getuser(user, &su);
+        if (NULL == su) RETURN_LONG(-1);
+    }
+
+    const struct boardheader *bh = NULL;
+    getbid(board, &bh);
+    if (NULL == bh)
+        RETURN_LONG(-2);
+
+    RETURN_LONG(check_read_perm(su, bh));
+}
+#endif /* SBBSAPI */
 
 PHP_FUNCTION(bbs_checkorigin)
 {

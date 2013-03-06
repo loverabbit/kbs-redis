@@ -975,12 +975,17 @@ PHP_FUNCTION(bbs_print_article_js)
 
 
 /* function bbs_printoriginfile(string board, string filename);
+ * ifdef SBBSAPI : , [int maxlen]); bbs_originfile增加大小限制选项 by fool
  * 输出原文内容供编辑
  */
 PHP_FUNCTION(bbs_printoriginfile)
 {
     char *board,*filename;
     int boardLen,filenameLen;
+#ifdef SBBSAPI
+    long total = 0;
+    long maxlen = -1;
+#endif /* SBBSAPI */
     FILE* fp;
     const int outbuf_len = 4096;
     char buf[512],path[512];
@@ -989,7 +994,13 @@ PHP_FUNCTION(bbs_printoriginfile)
     int skip;
     const boardheader_t* bp;
 
+#ifdef SBBSAPI
+    if ((ZEND_NUM_ARGS() == 2) && (zend_parse_parameters(2 TSRMLS_CC, "ss", &board,&boardLen, &filename,&filenameLen) == SUCCESS)) {
+    } else if ((ZEND_NUM_ARGS() == 3) && (zend_parse_parameters(3 TSRMLS_CC, "ssl", &board,&boardLen, &filename,&filenameLen, &maxlen) == SUCCESS)) {
+    } else {
+#else
     if ((ZEND_NUM_ARGS() != 2) || (zend_parse_parameters(2 TSRMLS_CC, "ss", &board,&boardLen, &filename,&filenameLen) != SUCCESS)) {
+#endif /* SBBSAPI */
         WRONG_PARAM_COUNT;
     }
     if ((bp=getbcache(board))==0) {
@@ -1023,6 +1034,10 @@ PHP_FUNCTION(bbs_printoriginfile)
         }
         if (!strcasestr(buf, "</textarea>")) {
             int len = strlen(buf);
+#ifdef SBBSAPI
+            total += len;
+            if (maxlen > 0 && total > maxlen) break;
+#endif /* SBBSAPI */
             BUFFERED_OUTPUT(out, buf, len);
         }
     }
@@ -1044,6 +1059,9 @@ PHP_FUNCTION(bbs_originfile)
     FILE* fp;
     char buf[512],path[512];
     char *content, *ptr;
+#ifdef SBBSAPI
+    long maxlen = -1;
+#endif /* SBBSAPI */
     int chunk_size=51200, calen, clen, buflen;
     int i;
     int skip;
@@ -1051,7 +1069,12 @@ PHP_FUNCTION(bbs_originfile)
 
     if ((ZEND_NUM_ARGS() == 1) && (zend_parse_parameters(1 TSRMLS_CC, "s", &filename,&filenameLen) == SUCCESS)) {
         fp = fopen(filename, "r");
+#ifdef SBBSAPI
+    }else if (((ZEND_NUM_ARGS() == 2) && (zend_parse_parameters(2 TSRMLS_CC, "ss", &board,&boardLen, &filename,&filenameLen) == SUCCESS)) ||
+              ((ZEND_NUM_ARGS() == 3) && (zend_parse_parameters(3 TSRMLS_CC, "ssl", &board,&boardLen, &filename,&filenameLen, &maxlen) == SUCCESS))) {
+#else
     }else if ((ZEND_NUM_ARGS() == 2) && (zend_parse_parameters(2 TSRMLS_CC, "ss", &board,&boardLen, &filename,&filenameLen) == SUCCESS)) {
+#endif /* SBBSAPI */
         if ((bp=getbcache(board))==0) {
             RETURN_LONG(-1);
         }
@@ -1083,6 +1106,9 @@ PHP_FUNCTION(bbs_originfile)
         }
         buflen = strlen(buf);
         if ((clen + buflen) >= calen) {
+#ifdef SBBSAPI
+            if (maxlen > 0 && calen + chunk_size > maxlen) break;
+#endif /* SBBSAPI */
             calen += chunk_size;
             content = (char *)erealloc(content, calen);
             ptr = content + clen;

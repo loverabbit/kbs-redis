@@ -6,6 +6,8 @@
 PHP_FUNCTION(bbs_getboard);
 PHP_FUNCTION(bbs_safe_getboard);
 PHP_FUNCTION(bbs_getboards);
+PHP_FUNCTION(bbs_super_getboards);
+PHP_FUNCTION(bbs2_access_board);
 #ifdef NFORUM
 PHP_FUNCTION(bbs_getboard_bid);
 PHP_FUNCTION(bbs_getboard_nforum);
@@ -48,6 +50,8 @@ PHP_FUNCTION(bbs_gettitkey);
     PHP_FE(bbs_getboard, NULL) \
     PHP_FE(bbs_safe_getboard, NULL) \
     PHP_FE(bbs_getboards, NULL) \
+    PHP_FE(bbs_super_getboards, NULL) \
+    PHP_FE(bbs2_access_board, NULL) \
     PHP_FE(bbs_checkorigin, NULL) \
     PHP_FE(bbs_checkmark, NULL) \
     PHP_FE(bbs_getbname, NULL) \

@@ -150,7 +150,28 @@ PHP_FUNCTION(bbs_getonlineusernumber)
 {
     RETURN_LONG(get_utmp_number());
 }
+#ifdef SBBSAPI
+/* 
+ * Directly set current user, without the need of login,
+ * mainly used by stateless API.
+ * */
+PHP_FUNCTION(bbs_setuser_nologin)
+{
+    char *user_name;
+    unsigned user_len;
 
+    struct userec *user;
+    int num;
+
+    if (ZEND_NUM_ARGS() != 1 || zend_parse_parameters(1 TSRMLS_CC, "s", &user_name, &user_len) != SUCCESS) {
+        WRONG_PARAM_COUNT;
+    }
+
+    num = getuser(user_name, &user);
+    setcurrentuser(user, num);
+}
+
+#endif /* SBBSAPI */
 PHP_FUNCTION(bbs_getwwwguestnumber)
 {
     RETURN_LONG(getwwwguestcount());

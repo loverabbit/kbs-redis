@@ -391,6 +391,20 @@ PHP_FUNCTION(bbs_postarticle)
 #endif
     char name[STRLEN];
 
+#ifdef SBBSAPI
+    int system_type = 0;
+/*
+ * system_type:
+ * 0 for www2
+ * 1 for wForum
+ * 2 for wap
+ * 3 for api
+ * 4 for nForum
+ * 5 for Android版
+ * 6 for WP7版
+ * 7 for iOS版
+ * */
+#endif /* SBBSAPI */
 
     int ac = ZEND_NUM_ARGS();
 
@@ -404,10 +418,21 @@ PHP_FUNCTION(bbs_postarticle)
         }
         mailback = 0;
         is_tex = 0;
+#ifdef SBBSAPI
+        system_type = 0;
+#endif /* SBBSAPI */
     } else if (ac == 9) {
         if (zend_parse_parameters(9 TSRMLS_CC, "ss/s/llllll", &boardName, &blen, &title, &tlen, &content, &clen, &sig, &reid, &outgo,&anony,&mailback,&is_tex) == FAILURE) {
             WRONG_PARAM_COUNT;
         }
+#ifdef SBBSAPI
+        system_type = 0;
+        notopten = 0;
+    } else if (ac == 10) {
+        if (zend_parse_parameters(10 TSRMLS_CC, "ss/s/lllllll", &boardName, &blen, &title, &tlen, &content, &clen, &sig, &reid, &outgo,&anony,&mailback,&is_tex,&system_type) == FAILURE) {
+            WRONG_PARAM_COUNT;
+        }
+#endif /*SBBSAPI*/
 #ifdef NEWSMTH
     } else if (ac == 10) {
         if (zend_parse_parameters(10 TSRMLS_CC, "ss/s/lllllll", &boardName, &blen, &title, &tlen, &content, &clen, &sig, &reid, &outgo,&anony,&mailback,&is_tex,&from) == FAILURE) {
@@ -536,9 +561,34 @@ PHP_FUNCTION(bbs_postarticle)
     name[STRLEN - 1] = 0;
 #endif
     if (!strcmp(board, "Announce") || !strcmp(board, "Penalty"))
+#ifdef SBBSAPI
+        fprintf(fp, "\033[m\033[1;%2dm※ 来源:·%s %s·[FROM: %s]\033[m\n", color, BBS_FULL_NAME, name, BBS_FULL_NAME);
+#else
         fprintf(fp, "\033[m\033[%2dm※ 来源:·%s http://%s·[FROM: %s]\033[m\n", color, BBS_FULL_NAME, name, BBS_FULL_NAME);
+#endif /* SBBSAPI */
     else
+#ifdef SBBSAPI
+        if(system_type == 1)
+            fprintf(fp, "\n\033[m\033[1;%2dm※ 来源:·%s http://%s/wForum·[FROM: %s]\033[m\n", color, BBS_FULL_NAME, name, (anony) ? NAME_ANONYMOUS_FROM : SHOW_USERIP(getCurrentUser(), getSession()->fromhost));
+        else if(system_type == 2)
+            fprintf(fp, "\n\033[m\033[1;%2dm※ 来源:·%s http://%s/m·[FROM: %s]\033[m\n", color, BBS_FULL_NAME, name, (anony) ? NAME_ANONYMOUS_FROM : SHOW_USERIP(getCurrentUser(), getSession()->fromhost));
+        else if(system_type == 3)
+            fprintf(fp, "\n\033[m\033[1;%2dm※ 来源:·%s http://%s/api·[FROM: %s]\033[m\n", color, BBS_FULL_NAME, name, (anony) ? NAME_ANONYMOUS_FROM : SHOW_USERIP(getCurrentUser(), getSession()->fromhost));
+        else if(system_type == 4)
+            fprintf(fp, "\n\033[m\033[1;%2dm※ 来源:·%s http://%s/nForum·[FROM: %s]\033[m\n", color, BBS_FULL_NAME, name, (anony) ? NAME_ANONYMOUS_FROM : SHOW_USERIP(getCurrentUser(), getSession()->fromhost));
+        else if(system_type == 5)
+            fprintf(fp, "\n\033[m\033[1;%2dm※ 来源:·%s %s·[FROM: %s]\033[m\n", color, BBS_FULL_NAME, "Android客户端", (anony) ? NAME_ANONYMOUS_FROM : SHOW_USERIP(getCurrentUser(), getSession()->fromhost));
+        else if(system_type == 6)
+            fprintf(fp, "\n\033[m\033[1;%2dm※ 来源:·%s %s·[FROM: %s]\033[m\n", color, BBS_FULL_NAME, "WP7客户端", (anony) ? NAME_ANONYMOUS_FROM : SHOW_USERIP(getCurrentUser(), getSession()->fromhost));
+        else if(system_type == 7)
+            fprintf(fp, "\n\033[m\033[1;%2dm※ 来源:·%s %s·[FROM: %s]\033[m\n", color, BBS_FULL_NAME, "iOS客户端", (anony) ? NAME_ANONYMOUS_FROM : SHOW_USERIP(getCurrentUser(), getSession()->fromhost));
+        else if(system_type == 8)
+            fprintf(fp, "\n\033[m\033[1;%2dm※ 来源:·%s %s·[FROM: %s]\033[m\n", color, BBS_FULL_NAME, "黑莓客户端", (anony) ? NAME_ANONYMOUS_FROM : SHOW_USERIP(getCurrentUser(), getSession()->fromhost));
+        else
+            fprintf(fp, "\n\033[m\033[1;%2dm※ 来源:·%s http://%s·[FROM: %s]\033[m\n", color, BBS_FULL_NAME, name, (anony) ? NAME_ANONYMOUS_FROM : SHOW_USERIP(getCurrentUser(), getSession()->fromhost));
+#else
         fprintf(fp, "\n\033[m\033[%2dm※ 来源:·%s http://%s·[FROM: %s]\033[m\n", color, BBS_FULL_NAME, name, (anony) ? NAME_ANONYMOUS_FROM : SHOW_USERIP(getCurrentUser(), getSession()->fromhost));
+#endif /* SBBSAPI */
 
     if (brd->flag&BOARD_ATTACH) {
         upload_post_append(fp, &post_file, getSession());
@@ -681,15 +731,18 @@ PHP_FUNCTION(bbs_article_modify)
 
 
 
-/*  function bbs_updatearticle(string boardName, string filename ,string text)
+/*  function bbs_updatearticle(string boardName, int id, string filename ,string text)
  *  更新编辑文章
- *
+ *  add int id - fool:监视文章修改 2011.10.26
  */
 // this is a deprecated function, use bbs_updatearticle2() instead.
 PHP_FUNCTION(bbs_updatearticle)
 {
     char *boardName, *filename, *content;
     int blen, flen, clen;
+#ifdef REDIS
+    long id;
+#endif
     FILE *fin;
     FILE *fout;
     char infile[80], outfile[80];
@@ -705,7 +758,11 @@ PHP_FUNCTION(bbs_updatearticle)
      * getting arguments
      */
 
+#ifdef REDIS
+    if (ac != 4 || zend_parse_parameters(4 TSRMLS_CC, "slss/", &boardName, &blen, &id, &filename, &flen, &content, &clen) == FAILURE) {
+#else
     if (ac != 3 || zend_parse_parameters(3 TSRMLS_CC, "sss/", &boardName, &blen, &filename, &flen, &content, &clen) == FAILURE) {
+#endif /* REDIS */
         WRONG_PARAM_COUNT;
     }
     if ((bp=getbcache(boardName))==0) {
@@ -758,6 +815,9 @@ PHP_FUNCTION(bbs_updatearticle)
     f_cp(outfile, infile, O_TRUNC);
     unlink(outfile);
     add_edit_mark(infile, 0, NULL, getSession());
+#ifdef REDIS
+    bbs_log_event(BBSLOG_UPDATE, boardName, id);
+#endif /* REDIS */
     RETURN_LONG(0);
 }
 
@@ -1067,6 +1127,9 @@ PHP_FUNCTION(bbs_updatearticle2)
             f_touch(dirpath);
     }
     /* 更新索引结束 */
+#ifdef REDIS
+    bbs_log_event(BBSLOG_UPDATE, board, id);
+#endif /* REDIS */
     RETURN_LONG(0);
 }
 
