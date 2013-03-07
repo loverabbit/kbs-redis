@@ -427,7 +427,6 @@ PHP_FUNCTION(bbs_postarticle)
         }
 #ifdef SBBSAPI
         system_type = 0;
-        notopten = 0;
     } else if (ac == 10) {
         if (zend_parse_parameters(10 TSRMLS_CC, "ss/s/lllllll", &boardName, &blen, &title, &tlen, &content, &clen, &sig, &reid, &outgo,&anony,&mailback,&is_tex,&system_type) == FAILURE) {
             WRONG_PARAM_COUNT;
