@@ -36,8 +36,8 @@ $result = bbs_postarticle($board,
                           $anony, /* anonymous */
                           false, /* mailback */
                           false, /* tex */
-                          $type_map[$type], /* system type */
-                          $notopten);
+                          $type_map[$type] /* system type */
+                          );
 
 if ($result <= 0) {
    switch ($result) {
