@@ -17,10 +17,6 @@ napi_count($akey,'topicedit');
 $arr = array();
 if (is_null(bbs_safe_getboard(0, $board, $arr)))
    throw new Exception('无效版面');
-// 宵禁
-$readonly = array();
-if (bbs_is_all_read_only($readonly) && !bbs_is_noallreadonly_board($arr))
-   throw new Exception('本站处于宵禁期');
 
 $articles = array();
 if (!bbs_get_records_from_id($board, $id, $ftype, $articles))

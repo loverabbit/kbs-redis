@@ -17,13 +17,9 @@ $board = preg_replace('/[^_a-zA-Z0-9\s]/', '', $napi_http['board']);
 $akey = intval($napi_http['akey']);
 napi_count($akey,'topicpost');
 
-// 宵禁
 $arr = array();
 if (is_null(bbs_safe_getboard(0, $board, $arr)))
    throw new Exception('无效版面');
-$readonly = array();
-if (bbs_is_all_read_only($readonly) && !bbs_is_noallreadonly_board($arr))
-   throw new Exception('本站处于宵禁期');
 
 // 在内容后自动增加引用
 $content = napi_text_gbk($napi_http['content']);
