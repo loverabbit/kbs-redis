@@ -1148,6 +1148,9 @@ PHP_FUNCTION(bbs_add_favboard)
     }else{
         RETURN_LONG(-1);
     }
+#ifdef SBBSAPI
+    RETURN_LONG(0);
+#endif /* SBBSAPI */
 }
 
 /**
