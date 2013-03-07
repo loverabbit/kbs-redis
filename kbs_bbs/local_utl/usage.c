@@ -270,6 +270,21 @@ int gen_usage(char *buf, char *buf1, char *buf2, char *buf3)
         printf("Can't Write file\n");
         return 1;
     }
+#ifdef REDIS
+    /*生成 总时间排序的 */
+    qsort(st, numboards - 1, sizeof(st[0]), total_cmp);
+    fprintf(op1, "名次 %-15.15s%-25.25s %8s %5s %10s\n", "讨论区名称", "中文叙述", "累积时间", "人次", "平均时间");
+    for (i = 0; i < numboards; i++)
+        fprintf(op1, "%4d %-15.15s%-25.25s %-.8s %5d %10d\n", i + 1, st[i].boardname, st[i].expname, timetostr(st[i].sum), st[i].times, st[i].times == 0 ? 0 : st[i].sum / st[i].times);
+    fclose(op1);
+
+    /* 生成 平均时间排序的 */
+    qsort(st, numboards - 1, sizeof(st[0]), average_cmp);
+    fprintf(op2, "名次 %-15.15s%-25.25s %10s %5s %8s\n", "讨论区名称", "中文叙述", "平均时间", "累积时间", "人次");
+    for (i = 0; i < numboards; i++)
+        fprintf(op2, "%4d %-15.15s%-25.25s %10d %-.8s %5d\n", i + 1, st[i].boardname, st[i].expname, st[i].times == 0 ? 0 : st[i].sum / st[i].times, timetostr(st[i].sum), st[i].times);
+    fclose(op2);
+#endif /* REDIS */
 
     qsort(st, numboards, sizeof(st[0]), brd_cmp);
 
@@ -335,7 +350,7 @@ int gen_usage(char *buf, char *buf1, char *buf2, char *buf3)
     }
     fclose(op);
     fclose(op3);
-
+#ifndef REDIS
     /*生成 总时间排序的 */
     qsort(st, numboards - 1, sizeof(st[0]), total_cmp);
     fprintf(op1, "名次 %-15.15s%-25.25s %8s %5s %10s\n", "讨论区名称", "中文叙述", "累积时间", "人次", "平均时间");
@@ -349,10 +364,12 @@ int gen_usage(char *buf, char *buf1, char *buf2, char *buf3)
     for (i = 0; i < numboards; i++)
         fprintf(op2, "%4d %-15.15s%-25.25s %10d %-.8s %5d\n", i + 1, st[i].boardname, st[i].expname, st[i].times == 0 ? 0 : st[i].sum / st[i].times, timetostr(st[i].sum), st[i].times);
     fclose(op2);
-
+#endif /*REDIS*/
     numboards --;
     return 0;
 }
+
+#ifndef REDIS
 // kxn: rotate more logs
 static int rotatelog(const char *basename, int rotatecount)
 {
@@ -365,6 +382,7 @@ static int rotatelog(const char *basename, int rotatecount)
     }
     return 0;
 }
+#endif
 
 #ifdef NEWSMTH
 int gen_usage_all(struct binfo *s_all, char *buf, char *buf1)
@@ -480,7 +498,16 @@ int main(void)
     strcpy(weekall, BBSHOME "/boardusage.week.all");
     strcpy(monthall, BBSHOME "/boardusage.month.all");
 #endif
-
+#ifdef REDIS
+    // 令bbslogd清空缓存 
+    system("killall -ALRM bbslogd");
+    sleep(10);
+    // rotatelog 工作现在由专门的logrotate进程定时完成，无需在此操心
+    if ((fp = fopen(BBSHOME "/boardusage.log", "r")) == NULL) {
+        printf("cann't open boardusage.log\n");
+        return 1;
+    }
+#else
     /* rotate log*/
     rotatelog(BBSHOME "/boardusage.log", 20);
     /*生成今日数据*/
@@ -491,6 +518,7 @@ int main(void)
         printf("cann't open boardusage.log.0\n");
         return 1;
     }
+#endif
 
     resolve_boards();
 #ifdef NEWSMTH
