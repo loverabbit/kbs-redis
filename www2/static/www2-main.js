@@ -824,7 +824,7 @@ function docWriter(board, bid, start, man, ftype, page, total, apath, showHot, n
 			str += '">';
 		}
 		str += '<table class="main wide">';
-		str += '<col width="50"/><col width="50"/>';
+		str += '<col width="50"/><col width="50"/><col width="50"/>';
 		if (man) {
 			str += '<col width="50"/>';
 		}
