@@ -850,11 +850,11 @@ function docWriter(board, bid, start, man, ftype, page, total, apath, showHot, n
 			}
 			links += '</div></div>';
 		}
-		str += '<th>作者</th><th>日期</th><th>' + links + '</th></tr>';
+		str += '<th>人气</th><th>作者</th><th>日期</th><th>' + links + '</th></tr>';
 	}
 	w(str);
 }
-docWriter.prototype.o = function(id, gid, author, flag, time, title, size, imported, is_tex) {
+docWriter.prototype.o = function(id, gid, count, author, flag, time, title, size, imported, is_tex) {
 	var rowclass;	
 	if (www2dev && top.hlInfo && !this.man) {
 		var info = top.hlInfo.split(',');
@@ -885,6 +885,7 @@ docWriter.prototype.o = function(id, gid, author, flag, time, title, size, impor
 			str += '<td class="center"><input type="checkbox" name="art' + this.num + '" value="' + cb_value + '" /></td>';
 		}
 	}
+	str += '<td class="center">' + count + '</td>';
 	str += '<td class="center"><a href="bbsqry.php?userid=' + author + '">' + author + '</a></td>';
 	var fd = new Date((time+8*3600) * 1000); // assume Beijing timezone here
 	str += '<td><nobr>' + this.monthStr[fd.getUTCMonth()].substr(0,3) + "&nbsp;"

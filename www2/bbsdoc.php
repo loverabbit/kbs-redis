@@ -1,6 +1,7 @@
 <?php
 require("www2-funcs.php");
 require("www2-board.php");
+require_once dirname(__FILE__) . '/api/lib/Predis.php';
 login_init();
 bbs_session_modify_user_mode(BBS_MODE_READING);
 
@@ -99,6 +100,13 @@ function do_manage_function($board) {
 
 function display_articles($brdarr,$articles,$start,$ftype,$managemode,$page,$total,$showHot,$isnormalboard)
 {
+    /* 得到文章阅读数 */
+    $redis = new Predis_Client();
+    $keys = array();
+    foreach ($articles as $a)
+       $keys[] = 'count:' . $brdarr['NAME'] . ':' . $a['ID'];
+    $counts = array_map('intval', $redis->mget($keys));
+
 	global $brdnum, $usernum, $dir_modes, $show_none, $isclub;
 	$board = $brdarr["NAME"];
 	$ann_path = bbs_getannpath($board);
@@ -126,10 +134,10 @@ var c = new docWriter('<?php echo addslashes($board); ?>',<?php echo $brdarr["BI
 document.write('<tr><td align="center" colspan="<?php echo ($managemode?6:5); ?>">本区没有文章。</td></tr>');
 <?php
 	}
-	else foreach ($articles as $article)
+	else foreach ($articles as $i => $article)
 	{
 ?>
-c.o(<?php echo $article["ID"]; ?>,<?php echo $article["GROUPID"]; ?>,'<?php echo $article["OWNER"]; ?>',<?php
+c.o(<?php echo $article["ID"]; ?>,<?php echo $article["GROUPID"]; ?>,<?php echo $counts[$i] ?>,'<?php echo $article["OWNER"]; ?>',<?php
 		$flags = $article["FLAGS"];
 		echo "'" . $flags[0] . $flags[3] . "'";
 ?>,<?php echo $article["POSTTIME"]; ?>,'<?php echo addslashes(htmlspecialchars($article["TITLE"], ENT_QUOTES)); ?> ',<?php echo $article["EFFSIZE"]; ?>,<?php echo ($flags[1]=="y")?"1":"0"; ?>,<?php echo $article["IS_TEX"] ? "1" : "0"; ?>);
