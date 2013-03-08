@@ -81,5 +81,6 @@ att = new attWriter('r',<?php echo $id; ?>,0,0,1);
 ] [<a href="javascript:history.go(-1)">¿ìËÙ·µ»Ø</a>]
 </div>
 <?php
+	bbs_brcaddread($brdarr["NAME"], $articles[1]["ID"]);
 	page_footer();
 ?>

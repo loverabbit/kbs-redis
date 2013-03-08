@@ -1781,6 +1781,12 @@ PHP_FUNCTION(bbs_brcaddread)
     int bid;
 
     if (!strcmp(getCurrentUser()->userid, "guest")) {
+#ifdef REDIS
+        char text[512];
+        snprintf(text, 512, "%s:%lu:%s",
+                (getboard(bid))->filename, (unsigned long)fid, session->fromhost);
+        bbs_log_event(BBSLOG_READ, text, 0);
+#endif
         RETURN_NULL();
     }
     if (zend_parse_parameters(2 TSRMLS_CC, "sl", &board, &blen, &fid) != SUCCESS)
