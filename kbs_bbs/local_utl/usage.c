@@ -520,7 +520,7 @@ int main(void)
     }
 #endif
 
-    resolve_boards();
+    init_all();
 #ifdef NEWSMTH
     fillboardall();
     memcpy(st_all, st, (MAXBOARD+1)*sizeof(struct binfo));

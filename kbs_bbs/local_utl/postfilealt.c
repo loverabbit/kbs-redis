@@ -15,6 +15,9 @@ int main(int argc, char **argv)
     chdir(BBSHOME);
     resolve_boards();
     resolve_ucache();
+#ifdef ENABLE_MEMBER_CACHE
+    resolve_members();
+#endif
     if (!getuser(argv[2], &user)) {
         printf("user %s not found!\n", argv[2]);
         return -2;
