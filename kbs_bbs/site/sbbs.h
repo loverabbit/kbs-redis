@@ -13,6 +13,9 @@
 #define MAILOUT   1 /* 是否允许向站外主动发信 */
 #define MANUAL_DENY  0 /*是否允许手动解封*/
 #define BBS_SERVICE_DICT 1
+#define NEWPOSTSTAT 1
+#define SBBSAPI 1
+#define REDIS 1
 
 #define BUILD_PHP_EXTENSION 1   /*将php lib编成php extension */
 /*#define USE_SEM_LOCK 1*/
