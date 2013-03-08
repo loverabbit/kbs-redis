@@ -1780,20 +1780,25 @@ PHP_FUNCTION(bbs_brcaddread)
     const boardheader_t* bp;
     int bid;
 
+#ifndef REDIS
     if (!strcmp(getCurrentUser()->userid, "guest")) {
-#ifdef REDIS
-        char text[512];
-        snprintf(text, 512, "%s:%lu:%s",
-                (getboard(bid))->filename, (unsigned long)fid, session->fromhost);
-        bbs_log_event(BBSLOG_READ, text, 0);
-#endif
         RETURN_NULL();
     }
+#endif
     if (zend_parse_parameters(2 TSRMLS_CC, "sl", &board, &blen, &fid) != SUCCESS)
         WRONG_PARAM_COUNT;
     if ((bid=getbid(board, &bp))==0) {
         RETURN_NULL();
     }
+#ifdef REDIS
+    if (!strcmp(getCurrentUser()->userid, "guest")) {
+        char text[512];
+        snprintf(text, 512, "%s:%lu:%s",
+                (getboard(bid))->filename, (unsigned long)fid, getSession()->fromhost);
+        bbs_log_event(BBSLOG_READ, text, 0);
+        RETURN_NULL();
+    }
+#endif
 #ifdef HAVE_BRC_CONTROL
     brc_initial(getCurrentUser()->userid, bp->filename, getSession());
     brc_add_read(fid, bid, getSession());
